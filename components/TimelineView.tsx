@@ -9,7 +9,7 @@ import {
   Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDb } from "@/lib/firebase";
 import { applyTaskFiltersAndSort } from "@/lib/taskFilters";
 import type { Task, TaskStatus } from "@/types/task";
 import { DEPARTMENTS, ASSIGNEE_EVERYONE_UID } from "@/types/task";
@@ -83,6 +83,7 @@ export function TimelineView({ selectedDepartments, currentUserUid }: TimelineVi
   } = useTaskFilters();
 
   useEffect(() => {
+    const db = getDb();
     const q = query(
       collection(db, "tasks"),
       orderBy("createdAt", "desc")
@@ -125,6 +126,7 @@ export function TimelineView({ selectedDepartments, currentUserUid }: TimelineVi
   };
 
   useEffect(() => {
+    const db = getDb();
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const list: Member[] = snap.docs.map((d) => {
         const data = d.data();
@@ -194,7 +196,7 @@ export function TimelineView({ selectedDepartments, currentUserUid }: TimelineVi
     const { updateDoc, doc } = await import("firebase/firestore");
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
-    await updateDoc(doc(db, "tasks", taskId), {
+    await updateDoc(doc(getDb(), "tasks", taskId), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -211,7 +213,7 @@ export function TimelineView({ selectedDepartments, currentUserUid }: TimelineVi
 
   const removeTask = async (taskId: string) => {
     const { deleteDoc, doc } = await import("firebase/firestore");
-    await deleteDoc(doc(db, "tasks", taskId));
+    await deleteDoc(doc(getDb(), "tasks", taskId));
     setEditModalTask(null);
   };
 

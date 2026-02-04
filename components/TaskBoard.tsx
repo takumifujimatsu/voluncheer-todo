@@ -14,7 +14,7 @@ import {
   Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDb } from "@/lib/firebase";
 import { applyTaskFiltersAndSort } from "@/lib/taskFilters";
 import type { CompletedFilter, TaskSort } from "@/lib/taskFilters";
 import type { Task, TaskStatus } from "@/types/task";
@@ -118,6 +118,7 @@ export function TaskBoard({
   const setMyTasksOnly = onMyTasksOnlyChange ?? (() => {});
 
   useEffect(() => {
+    const db = getDb();
     const q = query(collection(db, "tasks"), orderBy("createdAt", "desc"));
     const unsub: Unsubscribe = onSnapshot(q, (snap) => {
       const list: Task[] = snap.docs.map((d) => {
@@ -147,6 +148,7 @@ export function TaskBoard({
   }, []);
 
   useEffect(() => {
+    const db = getDb();
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const list: Member[] = snap.docs.map((d) => {
         const data = d.data();
@@ -217,7 +219,7 @@ export function TaskBoard({
   }) => {
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
-    await addDoc(collection(db, "tasks"), {
+    await addDoc(collection(getDb(), "tasks"), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -246,7 +248,7 @@ export function TaskBoard({
   ) => {
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
-    await updateDoc(doc(db, "tasks", taskId), {
+    await updateDoc(doc(getDb(), "tasks", taskId), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -262,11 +264,11 @@ export function TaskBoard({
 
   const toggleDone = async (id: string, currentStatus: TaskStatus) => {
     const next = currentStatus === "done" ? "todo" : "done";
-    await updateDoc(doc(db, "tasks", id), { status: next });
+    await updateDoc(doc(getDb(), "tasks", id), { status: next });
   };
 
   const updateTaskStatus = async (taskId: string, newStatus: TaskStatus) => {
-    await updateDoc(doc(db, "tasks", taskId), { status: newStatus });
+    await updateDoc(doc(getDb(), "tasks", taskId), { status: newStatus });
   };
 
   const handleColumnDragOver = (e: React.DragEvent, columnKey: TaskStatus) => {
@@ -306,7 +308,7 @@ export function TaskBoard({
   };
 
   const removeTask = async (id: string) => {
-    await deleteDoc(doc(db, "tasks", id));
+    await deleteDoc(doc(getDb(), "tasks", id));
   };
 
   return (
@@ -349,7 +351,10 @@ export function TaskBoard({
                   (t) => t.status === "todo" || t.status === "doing",
                 )
               : filtered.filter((t) => t.status === key);
-          const grouped = groupTasksByDisplayDepartment(columnTasks, key);
+          const grouped = groupTasksByDisplayDepartment(
+            columnTasks,
+            key as "todo" | "done",
+          );
           const showByDepartment =
             (selectedDepartments.length === 0 ||
               selectedDepartments.length >= 2) &&

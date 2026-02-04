@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { Suspense, useState, useCallback, useEffect } from "react";
 import {
   collection,
   addDoc,
@@ -12,7 +12,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { deleteUser } from "firebase/auth";
-import { db } from "@/lib/firebase";
+import { getDb } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAppUrlState } from "@/hooks/useAppUrlState";
@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
 
-export default function Home() {
+function HomeContent() {
   const {
     user,
     userProfile,
@@ -98,6 +98,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
+    const db = getDb();
     const unsub: Unsubscribe = onSnapshot(collection(db, "users"), (snap) => {
       const list: Member[] = snap.docs.map((d) => {
         const data = d.data();
@@ -124,7 +125,7 @@ export default function Home() {
   }) => {
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
-    await addDoc(collection(db, "tasks"), {
+    await addDoc(collection(getDb(), "tasks"), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -280,7 +281,7 @@ export default function Home() {
         onDeleteMember={
           user?.email === "fujimatsu.t@voluncheer.or.jp" && user
             ? async (uid) => {
-                await deleteDoc(doc(db, "users", uid));
+                await deleteDoc(doc(getDb(), "users", uid));
                 if (uid === user.uid) {
                   await deleteUser(user);
                 }
@@ -491,5 +492,19 @@ export default function Home() {
         </button>
       </div>
     </div>
+  );
+}
+
+const PageFallback = () => (
+  <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
+    <Loader2 className="h-8 w-8 animate-spin text-[#2EABE3]" aria-hidden />
+  </div>
+);
+
+export default function Home() {
+  return (
+    <Suspense fallback={<PageFallback />}>
+      <HomeContent />
+    </Suspense>
   );
 }

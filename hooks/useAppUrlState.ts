@@ -51,7 +51,7 @@ function parseSort(s: string | null): TaskSort {
 }
 
 function parseDepartments(params: URLSearchParams): string[] {
-  const deptSet = new Set(DEPARTMENTS);
+  const deptSet = new Set<string>(DEPARTMENTS as readonly string[]);
   const raw = params.getAll("dept");
   return raw.filter((d) => deptSet.has(d));
 }

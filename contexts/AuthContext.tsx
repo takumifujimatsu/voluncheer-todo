@@ -14,7 +14,7 @@ import {
   type User,
 } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
-import { auth, googleProvider, db } from "@/lib/firebase";
+import { getAuthInstance, googleProvider, getDb } from "@/lib/firebase";
 
 export type UserProfile = {
   name: string;
@@ -37,6 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const auth = getAuthInstance();
+    const db = getDb();
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
@@ -65,11 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    await signInWithPopup(getAuthInstance(), googleProvider);
   };
 
   const signOut = async () => {
-    await firebaseSignOut(auth);
+    await firebaseSignOut(getAuthInstance());
   };
 
   const saveUserName = async (name: string) => {
@@ -77,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const trimmed = name.trim();
     if (!trimmed) return;
     await setDoc(
-      doc(db, "users", user.uid),
+      doc(getDb(), "users", user.uid),
       { name: trimmed },
       { merge: true }
     );

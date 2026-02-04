@@ -14,7 +14,7 @@ import {
   Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDb } from "@/lib/firebase";
 import { applyTaskFiltersAndSort } from "@/lib/taskFilters";
 import type { Task, TaskStatus } from "@/types/task";
 import { DEPARTMENTS, ASSIGNEE_EVERYONE_UID } from "@/types/task";
@@ -63,6 +63,7 @@ export function BoardView({ selectedDepartments, currentUserUid }: BoardViewProp
   } = useTaskFilters();
 
   useEffect(() => {
+    const db = getDb();
     const q = query(
       collection(db, "tasks"),
       orderBy("createdAt", "desc")
@@ -95,6 +96,7 @@ export function BoardView({ selectedDepartments, currentUserUid }: BoardViewProp
   }, []);
 
   useEffect(() => {
+    const db = getDb();
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const list: Member[] = snap.docs.map((d) => {
         const data = d.data();
@@ -128,7 +130,7 @@ export function BoardView({ selectedDepartments, currentUserUid }: BoardViewProp
   }) => {
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
-    await addDoc(collection(db, "tasks"), {
+    await addDoc(collection(getDb(), "tasks"), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -158,7 +160,7 @@ export function BoardView({ selectedDepartments, currentUserUid }: BoardViewProp
   ) => {
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
-    await updateDoc(doc(db, "tasks", taskId), {
+    await updateDoc(doc(getDb(), "tasks", taskId), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -175,11 +177,11 @@ export function BoardView({ selectedDepartments, currentUserUid }: BoardViewProp
 
   const toggleDone = async (id: string, currentStatus: TaskStatus) => {
     const next = currentStatus === "done" ? "todo" : "done";
-    await updateDoc(doc(db, "tasks", id), { status: next });
+    await updateDoc(doc(getDb(), "tasks", id), { status: next });
   };
 
   const removeTask = async (taskId: string) => {
-    await deleteDoc(doc(db, "tasks", taskId));
+    await deleteDoc(doc(getDb(), "tasks", taskId));
     setEditModalTask(null);
   };
 

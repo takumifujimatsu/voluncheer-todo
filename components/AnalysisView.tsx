@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, orderBy, type Unsubscribe } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDb } from "@/lib/firebase";
 import type { Task, TaskStatus } from "@/types/task";
 import { DEPARTMENTS } from "@/types/task";
 import {
@@ -53,6 +53,7 @@ export function AnalysisView({ selectedDepartments }: AnalysisViewProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   useEffect(() => {
+    const db = getDb();
     const q = query(
       collection(db, "tasks"),
       orderBy("createdAt", "desc")
@@ -202,9 +203,9 @@ export function AnalysisView({ selectedDepartments }: AnalysisViewProps) {
                     border: "1px solid rgb(226 232 240)",
                     borderRadius: "0.5rem",
                   }}
-                  formatter={(value: number, _name: string, props: { payload: { fullName: string } }) => [
-                    value,
-                    props.payload.fullName,
+                  formatter={(value: number | undefined, _name: string | undefined, props?: { payload?: { fullName?: string } }) => [
+                    value ?? 0,
+                    props?.payload?.fullName ?? "",
                   ]}
                   labelFormatter={() => "タスク数"}
                 />
@@ -243,7 +244,7 @@ export function AnalysisView({ selectedDepartments }: AnalysisViewProps) {
                     ))}
                   </Pie>
                   <Legend />
-                  <Tooltip formatter={(value: number) => [value, "件"]} />
+                  <Tooltip formatter={(value: number | undefined) => [value ?? 0, "件"]} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -274,7 +275,7 @@ export function AnalysisView({ selectedDepartments }: AnalysisViewProps) {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-600" />
                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
                   <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value: number) => [value, "件"]} />
+                  <Tooltip formatter={(value: number | undefined) => [value ?? 0, "件"]} />
                   <Bar dataKey="count" fill="#2EABE3" radius={[0, 4, 4, 0]} name="タスク" />
                 </BarChart>
               </ResponsiveContainer>

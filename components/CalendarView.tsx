@@ -14,7 +14,7 @@ import {
   Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDb } from "@/lib/firebase";
 import { applyTaskFiltersAndSort } from "@/lib/taskFilters";
 import type { Task, TaskStatus } from "@/types/task";
 import { DEPARTMENTS, ASSIGNEE_EVERYONE_UID } from "@/types/task";
@@ -87,6 +87,7 @@ export function CalendarView({ selectedDepartments, currentUserUid }: CalendarVi
   } = useTaskFilters();
 
   useEffect(() => {
+    const db = getDb();
     const q = query(
       collection(db, "tasks"),
       orderBy("createdAt", "desc")
@@ -119,6 +120,7 @@ export function CalendarView({ selectedDepartments, currentUserUid }: CalendarVi
   }, []);
 
   useEffect(() => {
+    const db = getDb();
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const list: Member[] = snap.docs.map((d) => {
         const data = d.data();
@@ -190,7 +192,7 @@ export function CalendarView({ selectedDepartments, currentUserUid }: CalendarVi
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
     const due = params.dueDate || addModalDefaultDate;
-    await addDoc(collection(db, "tasks"), {
+    await addDoc(collection(getDb(), "tasks"), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -218,7 +220,7 @@ export function CalendarView({ selectedDepartments, currentUserUid }: CalendarVi
   ) => {
     const depts =
       params.departments.length > 0 ? params.departments : [DEPARTMENTS[0]];
-    await updateDoc(doc(db, "tasks", taskId), {
+    await updateDoc(doc(getDb(), "tasks", taskId), {
       title: params.title,
       departments: depts,
       status: params.status,
@@ -234,7 +236,7 @@ export function CalendarView({ selectedDepartments, currentUserUid }: CalendarVi
   };
 
   const removeTask = async (taskId: string) => {
-    await deleteDoc(doc(db, "tasks", taskId));
+    await deleteDoc(doc(getDb(), "tasks", taskId));
     setEditModalTask(null);
   };
 
