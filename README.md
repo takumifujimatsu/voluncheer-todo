@@ -35,6 +35,22 @@ NEXT_PUBLIC_FIREBASE_CONFIG=<下の「コピー用」の内容をそのまま貼
 - 上記ブロックをコピーし、`.env.local` では `NEXT_PUBLIC_FIREBASE_CONFIG=` の後ろに貼り付けてください。
 - 別プロジェクトの場合は Firebase Console の値に差し替えてください。`.env.local` は Git にコミットされません。
 
+### 本番（Vercel）で Google ログインを動かす
+
+Vercel にデプロイしたあと、Google ログインが「ログインに失敗しました」になる場合は次を確認してください。
+
+1. **Vercel の環境変数**  
+   Project → Settings → Environment Variables に `NEXT_PUBLIC_FIREBASE_CONFIG` を設定し、**Redeploy** する。
+
+2. **Firebase の認証ドメイン**  
+   Firebase Console → **認証** → **設定**（歯車）→ **認証ドメイン** に、本番の URL を追加する。  
+   例: `voluncheer-todo.vercel.app` やカスタムドメイン。
+
+3. **Google Cloud の承認済みの JavaScript 生成元**  
+   [Google Cloud Console](https://console.cloud.google.com/) → **API とサービス** → **認証情報** → 該当の **OAuth 2.0 クライアント ID** を開く。  
+   **承認済みの JavaScript 生成元** に本番の URL を追加する。  
+   例: `https://voluncheer-todo.vercel.app`
+
 ### Firestore ルール
 
 認証済みユーザーのみ `tasks` を読み書きできるようにする例です。Firebase Console → Firestore Database → ルール で設定してください。

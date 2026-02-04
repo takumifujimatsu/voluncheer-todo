@@ -19,6 +19,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ボランチア ToDo",
   description: "NPO法人内タスク管理アプリ",
+  icons: {
+    icon: "/tabIcon.png",
+    apple: "/tabIcon.png",
+  },
 };
 
 export default function RootLayout({

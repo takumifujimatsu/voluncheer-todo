@@ -34,8 +34,14 @@ import {
   BarChart2,
   Menu,
   Plus,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
+
+/** メンバー用ゲートのシークレットパスワード。環境変数 NEXT_PUBLIC_MEMBER_GATE_PASSWORD で上書き可能 */
+const MEMBER_GATE_PASSWORD =
+  process.env.NEXT_PUBLIC_MEMBER_GATE_PASSWORD || "Happiness";
 
 function HomeContent() {
   const {
@@ -68,6 +74,17 @@ function HomeContent() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState("");
   const [nameSubmitting, setNameSubmitting] = useState(false);
+  /** メンバー用ゲート: 正しいパスワードを入力したら true（sessionStorage で永続） */
+  const [memberGatePassed, setMemberGatePassed] = useState(false);
+  const [gatePasswordInput, setGatePasswordInput] = useState("");
+  const [gatePasswordError, setGatePasswordError] = useState<string | null>(null);
+  const [gatePasswordVisible, setGatePasswordVisible] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && sessionStorage.getItem("voluncheer-member-gate") === "1") {
+      setMemberGatePassed(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (sidebarOpen) {
@@ -152,8 +169,24 @@ function HomeContent() {
     setAuthError(null);
     try {
       await signInWithGoogle();
-    } catch {
-      setAuthError("ログインに失敗しました。しばらくしてからお試しください。");
+    } catch (err: unknown) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? (err as { code: string }).code
+          : "";
+      if (code === "auth/unauthorized-domain") {
+        setAuthError(
+          "このドメインは Firebase で許可されていません。Firebase Console → 認証 → 設定 → 認証ドメイン にこのサイトの URL を追加してください。",
+        );
+      } else if (code === "auth/popup-blocked") {
+        setAuthError(
+          "ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。",
+        );
+      } else {
+        setAuthError(
+          "ログインに失敗しました。しばらくしてからお試しください。",
+        );
+      }
     }
   };
 
@@ -212,6 +245,75 @@ function HomeContent() {
   }
 
   if (!user) {
+    const handleGateSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      setGatePasswordError(null);
+      if (gatePasswordInput.trim() === MEMBER_GATE_PASSWORD) {
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("voluncheer-member-gate", "1");
+        }
+        setMemberGatePassed(true);
+        setGatePasswordInput("");
+      } else {
+        setGatePasswordError("パスワードが違います");
+      }
+    };
+
+    if (!memberGatePassed) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 dark:bg-slate-900">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-600 dark:bg-slate-800">
+            <h1 className="mb-2 text-center text-xl font-semibold text-slate-800 dark:text-slate-100">
+              ボランチア ToDo
+            </h1>
+            <p className="mb-6 text-center text-sm text-slate-500 dark:text-slate-400">
+              メンバー用のシークレットパスワードを入力してください
+            </p>
+            {gatePasswordError && (
+              <p
+                className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                role="alert"
+              >
+                {gatePasswordError}
+              </p>
+            )}
+            <form onSubmit={handleGateSubmit} className="space-y-4">
+              <div className="relative">
+                <input
+                  type={gatePasswordVisible ? "text" : "password"}
+                  value={gatePasswordInput}
+                  onChange={(e) => setGatePasswordInput(e.target.value)}
+                  placeholder="シークレットパスワード"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-10 text-sm text-slate-900 outline-none focus:border-[#2EABE3] focus:ring-2 focus:ring-[#2EABE3]/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-400"
+                  autoFocus
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setGatePasswordVisible((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-600 dark:hover:text-slate-200"
+                  aria-label={gatePasswordVisible ? "パスワードを隠す" : "パスワードを表示"}
+                >
+                  {gatePasswordVisible ? (
+                    <EyeOff className="h-5 w-5" aria-hidden />
+                  ) : (
+                    <Eye className="h-5 w-5" aria-hidden />
+                  )}
+                </button>
+              </div>
+              <button
+                type="submit"
+                disabled={!gatePasswordInput.trim()}
+                className="w-full rounded-lg bg-[#2EABE3] py-2.5 text-sm font-medium text-white transition hover:bg-[#2590c4] disabled:opacity-50"
+              >
+                確認
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 dark:bg-slate-900">
         <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-600 dark:bg-slate-800">
@@ -366,6 +468,12 @@ function HomeContent() {
             >
               <Menu className="h-5 w-5" />
             </button>
+            <img
+              src="/tabIcon.png"
+              alt=""
+              className="h-6 w-6 shrink-0 rounded object-contain sm:h-7 sm:w-7"
+              aria-hidden
+            />
             <h1 className="shrink-0 text-base font-semibold text-slate-800 dark:text-slate-100 sm:text-lg">
               ボランチア ToDo
             </h1>
