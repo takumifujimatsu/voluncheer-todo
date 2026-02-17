@@ -1,5 +1,7 @@
 /**
- * Firebase Functions: Discord 通知（毎日 7:00 JST に今日・明日の To Do を部署別に送信）
+ * Firebase Functions: Discord 通知
+ * - 毎日 7:00 JST に今日・明日の To Do を部署別に送信
+ * - タスク追加時に担当部署の Discord へ通知
  *
  * 本番では Webhook URL 等は環境変数または Secret Manager に移すことを推奨します。
  */
@@ -8,6 +10,7 @@ const {initializeApp} = require("firebase-admin/app");
 const {getFirestore, Timestamp} = require("firebase-admin/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {onRequest} = require("firebase-functions/v2/https");
+const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 
 initializeApp();
@@ -97,7 +100,7 @@ function buildDepartmentMessage(todayTasks, tomorrowTasks) {
   const lines = [];
   lines.push("## 📅 今日の To Do");
   if (todayTasks.length === 0) {
-    lines.push("特に予定ないよ");
+    lines.push("予定はありません");
   } else {
     for (const t of todayTasks) {
       const assignee = t.assigneeName && t.assigneeName.trim() ? t.assigneeName.trim() : "未割り当て";
@@ -107,13 +110,15 @@ function buildDepartmentMessage(todayTasks, tomorrowTasks) {
   lines.push("");
   lines.push("## 📅 明日の To Do");
   if (tomorrowTasks.length === 0) {
-    lines.push("特に予定ないよ");
+    lines.push("予定はありません");
   } else {
     for (const t of tomorrowTasks) {
       const assignee = t.assigneeName && t.assigneeName.trim() ? t.assigneeName.trim() : "未割り当て";
       lines.push(`・ ${t.title}（担当: ${assignee}）`);
     }
   }
+  lines.push("");
+  lines.push("📎 [ToDoを見る](https://voluncheer-todo.vercel.app/)");
   return lines.join("\n");
 }
 
@@ -130,6 +135,75 @@ async function sendToDiscord(webhookUrl, content) {
     throw new Error(`Discord webhook failed: ${res.status} ${text}`);
   }
 }
+
+/** 新規タスク追加時の通知メッセージ本文を組み立て（メンション除く） */
+function buildNewTaskMessage(task) {
+  const assignee = task.assigneeName && String(task.assigneeName).trim()
+    ? String(task.assigneeName).trim()
+    : "未割り当て";
+  const dueStr = getTaskDueDateString(task.dueDate)
+    ? getTaskDueDateString(task.dueDate)
+    : "未設定";
+  const deptLabel = (task.departments && task.departments.length > 0)
+    ? task.departments.join("、")
+    : "未設定";
+  const lines = [
+    "📌 **新規タスクが追加されました**",
+    "",
+    `**タイトル:** ${task.title || "（無題）"}`,
+    `**担当:** ${assignee}`,
+    `**期限:** ${dueStr}`,
+    `**担当部署:** ${deptLabel}`,
+    "",
+    "📎 [ToDoを見る](https://voluncheer-todo.vercel.app/)",
+  ];
+  return lines.join("\n");
+}
+
+/** タスク作成時: 担当部署の Discord に通知 */
+exports.onTaskCreated = onDocumentCreated(
+  "tasks/{taskId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) {
+      logger.warn("onTaskCreated: no event.data");
+      return;
+    }
+    const data = snap.data();
+    const rawDepts = data.departments ?? data.department;
+    const departments = Array.isArray(rawDepts)
+      ? rawDepts
+      : rawDepts ? [rawDepts] : [];
+
+    const task = {
+      title: data.title ?? "",
+      departments,
+      assigneeName: data.assigneeName ?? null,
+      dueDate: data.dueDate ?? null,
+    };
+
+    const body = buildNewTaskMessage(task);
+    let sent = 0;
+    for (const deptName of departments) {
+      const config = DISCORD_WEBHOOKS[deptName];
+      if (!config) {
+        logger.info(`onTaskCreated: no webhook for department "${deptName}"`);
+        continue;
+      }
+      const content = `${config.mention}\n${body}`;
+      try {
+        await sendToDiscord(config.url, content);
+        sent++;
+        logger.info(`onTaskCreated: Discord sent for ${deptName}`);
+      } catch (e) {
+        logger.error(`onTaskCreated: Discord failed for ${deptName}`, e);
+      }
+    }
+    if (sent === 0 && departments.length > 0) {
+      logger.warn("onTaskCreated: no webhook sent (no matching config)");
+    }
+  }
+);
 
 /** 今日・明日の To Do を取得し、部署別に Discord へ送信する本体 */
 async function runDiscordDailyTodoNotify() {
@@ -165,13 +239,13 @@ async function runDiscordDailyTodoNotify() {
   for (const [deptName, config] of Object.entries(DISCORD_WEBHOOKS)) {
     const deptToday = todayAll.filter((t) => t.departments.includes(deptName));
     const deptTomorrow = tomorrowAll.filter((t) => t.departments.includes(deptName));
-    // 全体（@everyone）のときは、今日・明日どちらも予定がない場合は送らない
-    if (deptName === "全体" && deptToday.length === 0 && deptTomorrow.length === 0) {
+    // 今日・明日どちらも予定がない場合は送らない
+    if (deptToday.length === 0 && deptTomorrow.length === 0) {
       logger.info(`Discord skipped for ${deptName} (no tasks)`);
       continue;
     }
     const body = buildDepartmentMessage(deptToday, deptTomorrow);
-    const content = `${config.mention}\n\n${body}`;
+    const content = `${config.mention}\n${body}`;
     try {
       await sendToDiscord(config.url, content);
       logger.info(`Discord sent for ${deptName}`);

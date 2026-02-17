@@ -20,6 +20,7 @@ import { DepartmentSelector } from "@/components/DepartmentSelector";
 import { AddTaskModal, type Member } from "@/components/AddTaskModal";
 import { ProfileModal } from "@/components/ProfileModal";
 import { TaskBoard } from "@/components/TaskBoard";
+import { DoneByDepartmentView } from "@/components/DoneByDepartmentView";
 import { CalendarView } from "@/components/CalendarView";
 import { BoardView } from "@/components/BoardView";
 import { TimelineView } from "@/components/TimelineView";
@@ -36,6 +37,7 @@ import {
   Plus,
   Eye,
   EyeOff,
+  CheckSquare,
 } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
 
@@ -79,6 +81,8 @@ function HomeContent() {
   const [gatePasswordInput, setGatePasswordInput] = useState("");
   const [gatePasswordError, setGatePasswordError] = useState<string | null>(null);
   const [gatePasswordVisible, setGatePasswordVisible] = useState(false);
+  /** リストビュー内のサブ表示: ボード（To Do/Done） or 完了（部署別） */
+  const [listSubView, setListSubView] = useState<"board" | "doneByDept">("board");
 
   useEffect(() => {
     if (typeof window !== "undefined" && sessionStorage.getItem("voluncheer-member-gate") === "1") {
@@ -487,7 +491,7 @@ function HomeContent() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-3 pb-52 pt-4 sm:px-4 sm:pb-6 sm:pt-6">
+        <main className="mx-auto min-w-0 w-full max-w-6xl flex-1 overflow-x-hidden px-3 pb-52 pt-4 sm:px-4 sm:pb-6 sm:pt-6">
           <div className="mb-6 flex overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm scrollbar-hide dark:border-slate-700 dark:bg-slate-800 sm:mb-4">
             <div className="flex min-w-max shrink-0 gap-0.5 sm:flex-1 sm:gap-0">
               <button
@@ -554,16 +558,51 @@ function HomeContent() {
           </div>
           <div className="h-4 shrink-0 sm:h-0" aria-hidden />
           {viewMode === "list" && (
-            <TaskBoard
-              selectedDepartments={selectedDepartments}
-              currentUserUid={user?.uid}
-              completedFilter={completedFilter}
-              onCompletedFilterChange={setCompletedFilter}
-              sort={sort}
-              onSortChange={setSort}
-              myTasksOnly={myTasksOnly}
-              onMyTasksOnlyChange={setMyTasksOnly}
-            />
+            <div className="min-w-0">
+              <div className="mb-4 flex min-w-0 gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1 dark:border-slate-700 dark:bg-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setListSubView("board")}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
+                    listSubView === "board"
+                      ? "bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                      : "text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4 shrink-0" aria-hidden />
+                  ボード
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setListSubView("doneByDept")}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
+                    listSubView === "doneByDept"
+                      ? "bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                      : "text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <CheckSquare className="h-4 w-4 shrink-0" aria-hidden />
+                  完了（部署別）
+                </button>
+              </div>
+              {listSubView === "board" ? (
+                <TaskBoard
+                  selectedDepartments={selectedDepartments}
+                  currentUserUid={user?.uid}
+                  completedFilter={completedFilter}
+                  onCompletedFilterChange={setCompletedFilter}
+                  sort={sort}
+                  onSortChange={setSort}
+                  myTasksOnly={myTasksOnly}
+                  onMyTasksOnlyChange={setMyTasksOnly}
+                />
+              ) : (
+                <DoneByDepartmentView
+                  selectedDepartments={selectedDepartments}
+                  currentUserUid={user?.uid}
+                />
+              )}
+            </div>
           )}
           {viewMode === "calendar" && (
             <CalendarView

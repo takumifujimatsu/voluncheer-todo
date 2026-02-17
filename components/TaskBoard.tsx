@@ -15,7 +15,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
-import { applyTaskFiltersAndSort } from "@/lib/taskFilters";
+import { applyTaskFiltersAndSort, getDueTime } from "@/lib/taskFilters";
 import type { CompletedFilter, TaskSort } from "@/lib/taskFilters";
 import type { Task, TaskStatus } from "@/types/task";
 import { DEPARTMENTS, ASSIGNEE_EVERYONE_UID } from "@/types/task";
@@ -28,6 +28,7 @@ import {
   User,
   ChevronDown,
   ChevronRight,
+  Pencil,
 } from "lucide-react";
 import { AddTaskModal, type Member } from "./AddTaskModal";
 import { TaskDetailModal } from "./TaskDetailModal";
@@ -96,8 +97,17 @@ export function TaskBoard({
   const [modalOpen, setModalOpen] = useState(false);
   const [modalStatus, setModalStatus] = useState<TaskStatus>("todo");
   const [editModalTask, setEditModalTask] = useState<Task | null>(null);
+  /** 右クリック／2本指タップで表示するコンテキストメニュー */
+  const [contextMenu, setContextMenu] = useState<{
+    task: Task;
+    x: number;
+    y: number;
+  } | null>(null);
+  /** 削除確認モーダルで表示するタスク（null のとき非表示） */
+  const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null);
   const justDraggedRef = useRef(false);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   /** 部署ごとの開閉（閉じている部署の名前を保持。To Do / Done 共通） */
   const [collapsedDepartments, setCollapsedDepartments] = useState<Set<string>>(
     new Set(),
@@ -311,8 +321,48 @@ export function TaskBoard({
     await deleteDoc(doc(getDb(), "tasks", id));
   };
 
+  /** 削除確認モーダルの表示・フェードアウト用 */
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleteConfirmExiting, setDeleteConfirmExiting] = useState(false);
+  const DELETE_CONFIRM_DURATION_MS = 200;
+
+  useEffect(() => {
+    if (deleteConfirmTask) {
+      setDeleteConfirmExiting(false);
+      setDeleteConfirmVisible(false);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setDeleteConfirmVisible(true));
+      });
+      return () => cancelAnimationFrame(id);
+    } else {
+      setDeleteConfirmVisible(false);
+      setDeleteConfirmExiting(false);
+    }
+  }, [deleteConfirmTask]);
+
+  /** コンテキストメニュー外クリックで閉じる */
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const handleClick = (e: MouseEvent) => {
+      if (contextMenuRef.current?.contains(e.target as Node)) return;
+      close();
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("click", handleClick, true);
+    window.addEventListener("contextmenu", close, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("click", handleClick, true);
+      window.removeEventListener("contextmenu", close, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
+
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <AddTaskModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -328,8 +378,121 @@ export function TaskBoard({
         members={members}
         tasksForNext={tasks}
         onSave={updateTask}
-        onDelete={removeTask}
+        onDelete={async (id) => {
+          const t = tasks.find((x) => x.id === id);
+          if (t) {
+            setEditModalTask(null);
+            setDeleteConfirmTask(t);
+          }
+        }}
       />
+
+      {/* 右クリック／2本指タップで表示するコンテキストメニュー */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-[100] min-w-[160px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-800"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+            onClick={() => {
+              setEditModalTask(contextMenu.task);
+              setContextMenu(null);
+            }}
+          >
+            <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+            編集
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+            onClick={() => {
+              setDeleteConfirmTask(contextMenu.task);
+              setContextMenu(null);
+            }}
+          >
+            <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+            削除
+          </button>
+        </div>
+      )}
+
+      {/* 削除確認モーダル（フェード・スケールのアニメーション付き） */}
+      {deleteConfirmTask && (
+        <>
+          <div
+            className={`fixed inset-0 z-[110] bg-black/50 transition-opacity duration-200 ${
+              deleteConfirmVisible && !deleteConfirmExiting
+                ? "opacity-100"
+                : "opacity-0"
+            }`}
+            aria-hidden
+            onClick={() => {
+              setDeleteConfirmExiting(true);
+              setTimeout(() => setDeleteConfirmTask(null), DELETE_CONFIRM_DURATION_MS);
+            }}
+          />
+          <div
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 pointer-events-none"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-confirm-title"
+          >
+            <div
+              className={`pointer-events-auto w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-xl transition-all duration-200 dark:border-slate-600 dark:bg-slate-800 ${
+                deleteConfirmVisible && !deleteConfirmExiting
+                  ? "scale-100 opacity-100"
+                  : "scale-95 opacity-0"
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                id="delete-confirm-title"
+                className="text-lg font-semibold text-slate-800 dark:text-slate-100"
+              >
+                タスクを削除しますか？
+              </h2>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                「{deleteConfirmTask.title}」を削除すると元に戻せません。
+              </p>
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteConfirmExiting(true);
+                    setTimeout(
+                      () => setDeleteConfirmTask(null),
+                      DELETE_CONFIRM_DURATION_MS,
+                    );
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = deleteConfirmTask.id;
+                    setDeleteConfirmExiting(true);
+                    setTimeout(() => {
+                      removeTask(id);
+                      setDeleteConfirmTask(null);
+                    }, DELETE_CONFIRM_DURATION_MS);
+                  }}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                >
+                  削除
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <FilterSortBar
@@ -343,14 +506,25 @@ export function TaskBoard({
         />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2">
         {STATUSES.map(({ key, label, bg }) => {
-          const columnTasks =
+          let columnTasks =
             key === "todo"
               ? filtered.filter(
                   (t) => t.status === "todo" || t.status === "doing",
                 )
               : filtered.filter((t) => t.status === key);
+          // Done は期日が近い順（新しい順）で表示し、昔のタスクが下に溜まるようにする
+          if (key === "done") {
+            columnTasks = [...columnTasks].sort((a, b) => {
+              const ta = getDueTime(a.dueDate);
+              const tb = getDueTime(b.dueDate);
+              if (ta === 0 && tb === 0) return 0;
+              if (ta === 0) return 1;
+              if (tb === 0) return -1;
+              return tb - ta; // 期日が新しい順
+            });
+          }
           const grouped = groupTasksByDisplayDepartment(
             columnTasks,
             key as "todo" | "done",
@@ -363,7 +537,7 @@ export function TaskBoard({
           return (
             <div
               key={key}
-              className={`rounded-xl border-2 p-4 shadow-sm transition-colors ${
+              className={`min-w-0 rounded-xl border-2 p-4 shadow-sm transition-colors ${
                 isDropTarget
                   ? "border-[#2EABE3] bg-[#2EABE3]/10 dark:bg-[#2EABE3]/20"
                   : bg
@@ -448,6 +622,14 @@ export function TaskBoard({
                                     onDragEnd={() => {
                                       justDraggedRef.current = true;
                                     }}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      setContextMenu({
+                                        task,
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                      });
+                                    }}
                                     onClick={() => {
                                       if (justDraggedRef.current) {
                                         justDraggedRef.current = false;
@@ -461,13 +643,13 @@ export function TaskBoard({
                                         setEditModalTask(task);
                                       }
                                     }}
-                                    className={`group flex cursor-grab active:cursor-grabbing flex-col gap-1 rounded-lg border-2 p-3 shadow-sm transition hover:shadow-md ${
+                                    className={`group flex min-w-0 cursor-grab active:cursor-grabbing flex-col gap-1 rounded-lg border-2 p-3 shadow-sm transition hover:shadow-md ${
                                       isMine
                                         ? "border-blue-400 bg-blue-50/60 dark:border-blue-500 dark:bg-blue-900/30"
                                         : "border-white bg-white dark:border-slate-600 dark:bg-slate-700"
                                     }`}
                                   >
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex min-w-0 items-center gap-2">
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -505,7 +687,7 @@ export function TaskBoard({
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            removeTask(task.id);
+                                            setDeleteConfirmTask(task);
                                           }}
                                           className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
                                           aria-label="削除"
@@ -515,9 +697,10 @@ export function TaskBoard({
                                       </div>
                                     </div>
                                     {(task.assigneeName ||
-                                      formatDueDateRelative(task.dueDate) ||
+                                      (!isDone &&
+                                        formatDueDateRelative(task.dueDate)) ||
                                       task.departments.length > 0) && (
-                                      <div className="ml-7 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                      <div className="ml-7 min-w-0 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                                         {task.departments.length > 0 && (
                                           <span>
                                             部署: {task.departments.join("、")}
@@ -539,7 +722,8 @@ export function TaskBoard({
                                             )}
                                           </span>
                                         )}
-                                        {formatDueDateRelative(task.dueDate) &&
+                                        {!isDone &&
+                                          formatDueDateRelative(task.dueDate) &&
                                           (() => {
                                             const dueLabel =
                                               formatDueDateRelative(
@@ -621,6 +805,14 @@ export function TaskBoard({
                         onDragEnd={() => {
                           justDraggedRef.current = true;
                         }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({
+                            task,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }}
                         onClick={() => {
                           if (justDraggedRef.current) {
                             justDraggedRef.current = false;
@@ -634,13 +826,13 @@ export function TaskBoard({
                             setEditModalTask(task);
                           }
                         }}
-                        className={`group flex cursor-grab active:cursor-grabbing flex-col gap-1 rounded-lg border-2 p-3 shadow-sm transition hover:shadow-md ${
+                        className={`group flex min-w-0 cursor-grab active:cursor-grabbing flex-col gap-1 rounded-lg border-2 p-3 shadow-sm transition hover:shadow-md ${
                           isMine
                             ? "border-blue-400 bg-blue-50/60 dark:border-blue-500 dark:bg-blue-900/30"
                             : "border-white bg-white dark:border-slate-600 dark:bg-slate-700"
                         }`}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -673,7 +865,7 @@ export function TaskBoard({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                removeTask(task.id);
+                                setDeleteConfirmTask(task);
                               }}
                               className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
                               aria-label="削除"
@@ -683,9 +875,10 @@ export function TaskBoard({
                           </div>
                         </div>
                         {(task.assigneeName ||
-                          formatDueDateRelative(task.dueDate) ||
+                          (!isDone &&
+                            formatDueDateRelative(task.dueDate)) ||
                           task.departments.length > 0) && (
-                          <div className="ml-7 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <div className="ml-7 min-w-0 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                             {task.departments.length > 0 && (
                               <span>部署: {task.departments.join("、")}</span>
                             )}
@@ -703,7 +896,8 @@ export function TaskBoard({
                                 )}
                               </span>
                             )}
-                            {formatDueDateRelative(task.dueDate) &&
+                            {!isDone &&
+                              formatDueDateRelative(task.dueDate) &&
                               (() => {
                                 const label = formatDueDateRelative(
                                   task.dueDate,
