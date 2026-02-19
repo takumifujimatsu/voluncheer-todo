@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "lint:functions": "eslint functions/"
   },
   "dependencies": {
     "firebase": "^12.8.0",

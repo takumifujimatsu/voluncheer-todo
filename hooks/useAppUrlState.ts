@@ -6,7 +6,13 @@ import { DEPARTMENTS } from "@/types/task";
 import type { CompletedFilter } from "@/lib/taskFilters";
 import type { TaskSort } from "@/lib/taskFilters";
 
-export type ViewMode = "list" | "calendar" | "board" | "timeline" | "analysis";
+export type ViewMode =
+  | "list"
+  | "calendar"
+  | "board"
+  | "timeline"
+  | "analysis"
+  | "library";
 
 const VIEW_VALUES: ViewMode[] = [
   "list",
@@ -14,6 +20,7 @@ const VIEW_VALUES: ViewMode[] = [
   "board",
   "timeline",
   "analysis",
+  "library",
 ];
 const DISPLAY_VALUES: CompletedFilter[] = ["all", "incomplete", "complete"];
 const SORT_VALUES: TaskSort[] = [

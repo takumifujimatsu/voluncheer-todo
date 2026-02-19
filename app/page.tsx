@@ -25,6 +25,7 @@ import { CalendarView } from "@/components/CalendarView";
 import { BoardView } from "@/components/BoardView";
 import { TimelineView } from "@/components/TimelineView";
 import { AnalysisView } from "@/components/AnalysisView";
+import { ResourceLibrary } from "@/components/ResourceLibrary";
 import { DEPARTMENTS } from "@/types/task";
 import {
   Loader2,
@@ -33,6 +34,7 @@ import {
   LayoutGrid,
   GanttChart,
   BarChart2,
+  Library,
   Menu,
   Plus,
   Eye,
@@ -554,6 +556,18 @@ function HomeContent() {
                 <BarChart2 className="h-4 w-4 shrink-0" />
                 <span>分析</span>
               </button>
+              <button
+                type="button"
+                onClick={() => handleViewModeChange("library")}
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                  viewMode === "library"
+                    ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                }`}
+              >
+                <Library className="h-4 w-4 shrink-0" />
+                <span>資料室</span>
+              </button>
             </div>
           </div>
           <div className="h-4 shrink-0 sm:h-0" aria-hidden />
@@ -624,6 +638,9 @@ function HomeContent() {
           )}
           {viewMode === "analysis" && (
             <AnalysisView selectedDepartments={selectedDepartments} />
+          )}
+          {viewMode === "library" && (
+            <ResourceLibrary currentUserUid={user?.uid} />
           )}
         </main>
 
