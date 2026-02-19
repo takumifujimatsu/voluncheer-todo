@@ -540,11 +540,13 @@ export function ResourceLibrary({ currentUserUid }: ResourceLibraryProps) {
     const all = [...folderItems, ...resourceItems];
     if (all.length === 0) return [];
     if (!currentUserUid || itemOrder.length === 0) {
+      type FolderItem = Extract<ViewItem, { type: "folder" }>;
+      type ResourceItem = Extract<ViewItem, { type: "resource" }>;
       return [
-        ...folderItems.sort((a, b) =>
+        ...(folderItems as FolderItem[]).sort((a, b) =>
           a.folder.name.toLowerCase().localeCompare(b.folder.name.toLowerCase()),
         ),
-        ...resourceItems.sort((a, b) =>
+        ...(resourceItems as ResourceItem[]).sort((a, b) =>
           a.resource.title.toLowerCase().localeCompare(b.resource.title.toLowerCase()),
         ),
       ];
