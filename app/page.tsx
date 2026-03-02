@@ -9,6 +9,7 @@ import {
   Timestamp,
   doc,
   deleteDoc,
+  setDoc,
   type Unsubscribe,
 } from "firebase/firestore";
 import { deleteUser } from "firebase/auth";
@@ -26,6 +27,7 @@ import { BoardView } from "@/components/BoardView";
 import { TimelineView } from "@/components/TimelineView";
 import { AnalysisView } from "@/components/AnalysisView";
 import { ResourceLibrary } from "@/components/ResourceLibrary";
+import { DashboardView } from "@/components/DashboardView";
 import { DEPARTMENTS } from "@/types/task";
 import {
   Loader2,
@@ -40,8 +42,13 @@ import {
   Eye,
   EyeOff,
   CheckSquare,
+  LayoutDashboard,
 } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
+import { MemberDepartmentModal } from "@/components/MemberDepartmentModal";
+
+/** メンバー部署を管理できる管理者のメールアドレス */
+const ADMIN_EMAILS_DEPARTMENT = ["fujimatsu.t@voluncheer.or.jp", "shimura@voluncheer.or.jp"];
 
 /** メンバー用ゲートのシークレットパスワード。環境変数 NEXT_PUBLIC_MEMBER_GATE_PASSWORD で上書き可能 */
 const MEMBER_GATE_PASSWORD =
@@ -55,6 +62,7 @@ function HomeContent() {
     signInWithGoogle,
     signOut,
     saveUserName,
+    saveUserProfile,
   } = useAuth();
   const { theme, setTheme, resolvedDark } = useTheme();
   const {
@@ -71,6 +79,7 @@ function HomeContent() {
   } = useAppUrlState();
   const [headerAddModalOpen, setHeaderAddModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarClosing, setSidebarClosing] = useState(false);
   const [sidebarReady, setSidebarReady] = useState(false);
@@ -123,13 +132,20 @@ function HomeContent() {
     if (!user) return;
     const db = getDb();
     const unsub: Unsubscribe = onSnapshot(collection(db, "users"), (snap) => {
-      const list: Member[] = snap.docs.map((d) => {
-        const data = d.data();
+      const list: Member[] = snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const rawDepts = data.departments ?? data.department;
+        const departments = Array.isArray(rawDepts)
+          ? rawDepts
+          : typeof rawDepts === "string" && rawDepts.trim()
+            ? [rawDepts]
+            : [];
         return {
-          uid: d.id,
+          uid: docSnap.id,
           name: (data.name as string) ?? "",
           displayName: data.displayName ?? "",
           email: data.email ?? "",
+          departments,
         };
       });
       setMembers(list);
@@ -383,9 +399,10 @@ function HomeContent() {
         isOpen={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
         currentName={userProfile?.name ?? user?.displayName ?? ""}
+        currentDepartments={members.find((m) => m.uid === user?.uid)?.departments ?? []}
         email={user?.email ?? null}
         members={members}
-        onSaveName={saveUserName}
+        onSaveProfile={saveUserProfile}
         onDeleteMember={
           user?.email === "fujimatsu.t@voluncheer.or.jp" && user
             ? async (uid) => {
@@ -397,6 +414,18 @@ function HomeContent() {
             : undefined
         }
       />
+      <MemberDepartmentModal
+        isOpen={departmentModalOpen}
+        onClose={() => setDepartmentModalOpen(false)}
+        members={members}
+        onSave={async (memberUid, departments) => {
+          await setDoc(
+            doc(getDb(), "users", memberUid),
+            { departments },
+            { merge: true }
+          );
+        }}
+      />
       {/* デスクトップ: 常時表示のサイドバー */}
       <aside className="sticky top-0 hidden h-screen w-56 shrink-0 overflow-y-auto border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 md:block">
         <AppSidebar
@@ -407,6 +436,13 @@ function HomeContent() {
           theme={theme}
           setTheme={setTheme}
           onSignOut={signOut}
+          onDepartmentManageClick={
+            user?.email && ADMIN_EMAILS_DEPARTMENT.includes(user.email)
+              ? () => setDepartmentModalOpen(true)
+              : undefined
+          }
+          viewMode={viewMode}
+          onViewChange={handleViewModeChange}
         />
       </aside>
 
@@ -455,6 +491,17 @@ function HomeContent() {
                 setSidebarClosing(true);
                 setSidebarOpen(false);
               }}
+              onDepartmentManageClick={
+                user?.email && ADMIN_EMAILS_DEPARTMENT.includes(user.email)
+                  ? () => {
+                      setDepartmentModalOpen(true);
+                      setSidebarOpen(false);
+                      setSidebarClosing(false);
+                    }
+                  : undefined
+              }
+              viewMode={viewMode}
+              onViewChange={handleViewModeChange}
             />
           </div>
         </>
@@ -494,12 +541,12 @@ function HomeContent() {
         </header>
 
         <main className="mx-auto min-w-0 w-full max-w-6xl flex-1 overflow-x-hidden px-3 pb-52 pt-4 sm:px-4 sm:pb-6 sm:pt-6">
-          <div className="mb-6 flex overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm scrollbar-hide dark:border-slate-700 dark:bg-slate-800 sm:mb-4">
+          <div className="mb-6 flex overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm scrollbar-hide dark:border-slate-700 dark:bg-slate-800 sm:mb-4">
             <div className="flex min-w-max shrink-0 gap-0.5 sm:flex-1 sm:gap-0">
               <button
                 type="button"
                 onClick={() => handleViewModeChange("list")}
-                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
                   viewMode === "list"
                     ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -511,7 +558,7 @@ function HomeContent() {
               <button
                 type="button"
                 onClick={() => handleViewModeChange("calendar")}
-                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
                   viewMode === "calendar"
                     ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -523,7 +570,7 @@ function HomeContent() {
               <button
                 type="button"
                 onClick={() => handleViewModeChange("board")}
-                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
                   viewMode === "board"
                     ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -535,7 +582,7 @@ function HomeContent() {
               <button
                 type="button"
                 onClick={() => handleViewModeChange("timeline")}
-                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
                   viewMode === "timeline"
                     ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -547,7 +594,7 @@ function HomeContent() {
               <button
                 type="button"
                 onClick={() => handleViewModeChange("analysis")}
-                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
                   viewMode === "analysis"
                     ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -559,7 +606,7 @@ function HomeContent() {
               <button
                 type="button"
                 onClick={() => handleViewModeChange("library")}
-                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
                   viewMode === "library"
                     ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -568,16 +615,28 @@ function HomeContent() {
                 <Library className="h-4 w-4 shrink-0" />
                 <span>資料室</span>
               </button>
+              <button
+                type="button"
+                onClick={() => handleViewModeChange("dashboard")}
+                className={`flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:flex-1 sm:gap-2 sm:py-2.5 ${
+                  viewMode === "dashboard"
+                    ? "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                }`}
+              >
+                <LayoutDashboard className="h-4 w-4 shrink-0" />
+                <span>ダッシュボード</span>
+              </button>
             </div>
           </div>
           <div className="h-4 shrink-0 sm:h-0" aria-hidden />
           {viewMode === "list" && (
             <div className="min-w-0">
-              <div className="mb-4 flex min-w-0 gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1 dark:border-slate-700 dark:bg-slate-800/80">
+              <div className="mb-4 flex min-w-0 gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1 dark:border-slate-700 dark:bg-slate-800/80">
                 <button
                   type="button"
                   onClick={() => setListSubView("board")}
-                  className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                     listSubView === "board"
                       ? "bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-slate-100"
                       : "text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
@@ -589,7 +648,7 @@ function HomeContent() {
                 <button
                   type="button"
                   onClick={() => setListSubView("doneByDept")}
-                  className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                     listSubView === "doneByDept"
                       ? "bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-slate-100"
                       : "text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
@@ -641,6 +700,13 @@ function HomeContent() {
           )}
           {viewMode === "library" && (
             <ResourceLibrary currentUserUid={user?.uid} />
+          )}
+          {viewMode === "dashboard" && (
+            <DashboardView
+              members={members}
+              currentUserUid={user?.uid}
+              currentUserEmail={user?.email ?? null}
+            />
           )}
         </main>
 

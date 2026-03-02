@@ -12,7 +12,8 @@ export type ViewMode =
   | "board"
   | "timeline"
   | "analysis"
-  | "library";
+  | "library"
+  | "dashboard";
 
 const VIEW_VALUES: ViewMode[] = [
   "list",
@@ -21,6 +22,7 @@ const VIEW_VALUES: ViewMode[] = [
   "timeline",
   "analysis",
   "library",
+  "dashboard",
 ];
 const DISPLAY_VALUES: CompletedFilter[] = ["all", "incomplete", "complete"];
 const SORT_VALUES: TaskSort[] = [

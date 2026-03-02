@@ -27,6 +27,7 @@ type AuthContextValue = {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   saveUserName: (name: string) => Promise<void>;
+  saveUserProfile: (name: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -83,12 +84,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { name: trimmed },
       { merge: true }
     );
-    setUserProfile({ name: trimmed });
+    setUserProfile((prev) => (prev ? { ...prev, name: trimmed } : { name: trimmed }));
+  };
+
+  const saveUserProfile = async (name: string) => {
+    if (!user) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    await setDoc(
+      doc(getDb(), "users", user.uid),
+      { name: trimmedName },
+      { merge: true }
+    );
+    setUserProfile({ name: trimmedName });
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, userProfile, loading, signInWithGoogle, signOut, saveUserName }}
+      value={{ user, userProfile, loading, signInWithGoogle, signOut, saveUserName, saveUserProfile }}
     >
       {children}
     </AuthContext.Provider>

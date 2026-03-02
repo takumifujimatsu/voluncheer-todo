@@ -11,10 +11,12 @@ export type ProfileModalProps = {
   onClose: () => void;
   /** 現在の表示名（Firestore の name または Google displayName） */
   currentName: string;
+  /** 現在の所属部署（表示のみ、管理者が設定） */
+  currentDepartments: string[];
   /** メールアドレス（変更不可・表示のみ） */
   email: string | null;
   members: Member[];
-  onSaveName: (name: string) => Promise<void>;
+  onSaveProfile: (name: string) => Promise<void>;
   /** このメールでログインしている場合、メンバー一覧で各メンバーを削除できる */
   onDeleteMember?: (uid: string) => Promise<void>;
 };
@@ -23,9 +25,10 @@ export function ProfileModal({
   isOpen,
   onClose,
   currentName,
+  currentDepartments,
   email,
   members,
-  onSaveName,
+  onSaveProfile,
   onDeleteMember,
 }: ProfileModalProps) {
   const [name, setName] = useState(currentName);
@@ -72,7 +75,7 @@ export function ProfileModal({
     if (!trimmed) return;
     setSubmitting(true);
     try {
-      await onSaveName(trimmed);
+      await onSaveProfile(trimmed);
       handleClose();
     } finally {
       setSubmitting(false);
@@ -144,6 +147,17 @@ export function ProfileModal({
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              所属部署
+            </label>
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-700/80 dark:text-slate-400">
+              {currentDepartments.length > 0 ? currentDepartments.join("、") : "未設定"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              部署は管理者が設定します
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
               メールアドレス
             </label>
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-700/80 dark:text-slate-400">
@@ -186,8 +200,13 @@ export function ProfileModal({
                   key={m.uid}
                   className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-slate-800 dark:text-slate-200"
                 >
-                  <span className="min-w-0 truncate font-medium">
-                    {memberDisplayName(m)}
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{memberDisplayName(m)}</span>
+                    {m.departments?.length > 0 && (
+                      <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                        （{m.departments.join("、")}）
+                      </span>
+                    )}
                   </span>
                   <span className="shrink-0 truncate text-xs text-slate-500 dark:text-slate-400" title={m.email}>
                     {m.email}

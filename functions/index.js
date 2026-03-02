@@ -1,7 +1,8 @@
 /**
  * Firebase Functions: Discord 通知
- * - 毎日 7:00 JST に今日・明日の To Do を部署別に送信
+ * - 毎日 7:00 JST に期限切れ・今日・明日の To Do を部署別に送信
  * - タスク追加時に担当部署の Discord へ通知
+ * - 資料室に資料が追加されたときにその部署の Discord へ通知
  *
  * 本番では Webhook URL 等は環境変数または Secret Manager に移すことを推奨します。
  */
@@ -83,21 +84,35 @@ function getTaskDueDateString(dueDate) {
   return null;
 }
 
-/** タスクを「今日」「明日」で分類（status は todo/doing に限定済み想定） */
-function groupTasksByTodayTomorrow(tasks, todayStr, tomorrowStr) {
+/** タスクを「期限切れ」「今日」「明日」で分類（status は todo/doing に限定済み想定） */
+function groupTasksByTodayTomorrowAndPast(tasks, todayStr, tomorrowStr) {
+  const past = [];
   const today = [];
   const tomorrow = [];
   for (const t of tasks) {
     const dueStr = getTaskDueDateString(t.dueDate);
-    if (dueStr === todayStr) today.push(t);
+    if (dueStr == null) continue;
+    if (dueStr < todayStr) past.push(t);
+    else if (dueStr === todayStr) today.push(t);
     else if (dueStr === tomorrowStr) tomorrow.push(t);
   }
-  return {today, tomorrow};
+  return {past, today, tomorrow};
 }
 
 /** 1 部署用の Discord メッセージ本文を組み立て（メンション除く） */
-function buildDepartmentMessage(todayTasks, tomorrowTasks) {
+function buildDepartmentMessage(pastTasks, todayTasks, tomorrowTasks) {
   const lines = [];
+  lines.push("## ⏰ 期限が過ぎている To Do");
+  if (pastTasks.length === 0) {
+    lines.push("なし");
+  } else {
+    for (const t of pastTasks) {
+      const assignee = t.assigneeName && t.assigneeName.trim() ? t.assigneeName.trim() : "未割り当て";
+      const dueStr = getTaskDueDateString(t.dueDate) || "—";
+      lines.push(`・ ${t.title}（期限: ${dueStr} / 担当: ${assignee}）`);
+    }
+  }
+  lines.push("");
   lines.push("## 📅 今日の To Do");
   if (todayTasks.length === 0) {
     lines.push("予定はありません");
@@ -160,6 +175,32 @@ function buildNewTaskMessage(task) {
   return lines.join("\n");
 }
 
+/** 資料の種類ラベル（資料室と一致） */
+const RESOURCE_TYPE_LABELS = {
+  canva: "Canva",
+  document: "ドキュメント",
+  spreadsheet: "スプレッドシート",
+  form: "フォーム",
+  drive: "ドライブ",
+  pdf: "PDF",
+  other: "その他",
+};
+
+/** 新規資料追加時の通知メッセージ本文を組み立て（メンション除く） */
+function buildNewResourceMessage(resource) {
+  const typeLabel = RESOURCE_TYPE_LABELS[resource.type] || resource.type || "その他";
+  const lines = [
+    "📚 **資料室に資料が追加されました**",
+    "",
+    `**タイトル:** ${resource.title || "（無題）"}`,
+    `**種類:** ${typeLabel}`,
+    `**担当部署:** ${resource.department || "未設定"}`,
+    "",
+    "📎 [資料室を見る](https://voluncheer-todo.vercel.app/)",
+  ];
+  return lines.join("\n");
+}
+
 /** タスク作成時: 担当部署の Discord に通知 */
 exports.onTaskCreated = onDocumentCreated(
   "tasks/{taskId}",
@@ -205,6 +246,48 @@ exports.onTaskCreated = onDocumentCreated(
   }
 );
 
+/** 資料作成時: 担当部署の Discord に通知 */
+exports.onResourceCreated = onDocumentCreated(
+  "resources/{resourceId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) {
+      logger.warn("onResourceCreated: no event.data");
+      return;
+    }
+    const data = snap.data();
+    const department = data.department && String(data.department).trim()
+      ? String(data.department).trim()
+      : null;
+
+    const resource = {
+      title: data.title ?? "",
+      type: data.type ?? "other",
+      department: department ?? "未設定",
+    };
+
+    if (!department) {
+      logger.info("onResourceCreated: no department, skip Discord");
+      return;
+    }
+
+    const config = DISCORD_WEBHOOKS[department];
+    if (!config) {
+      logger.info(`onResourceCreated: no webhook for department "${department}"`);
+      return;
+    }
+
+    const body = buildNewResourceMessage(resource);
+    const content = `${config.mention}\n${body}`;
+    try {
+      await sendToDiscord(config.url, content);
+      logger.info(`onResourceCreated: Discord sent for ${department}`);
+    } catch (e) {
+      logger.error(`onResourceCreated: Discord failed for ${department}`, e);
+    }
+  }
+);
+
 /** 今日・明日の To Do を取得し、部署別に Discord へ送信する本体 */
 async function runDiscordDailyTodoNotify() {
   const db = getFirestore();
@@ -233,18 +316,19 @@ async function runDiscordDailyTodoNotify() {
     });
   });
 
-  const {today: todayAll, tomorrow: tomorrowAll} =
-    groupTasksByTodayTomorrow(tasks, todayStr, tomorrowStr);
+  const {past: pastAll, today: todayAll, tomorrow: tomorrowAll} =
+    groupTasksByTodayTomorrowAndPast(tasks, todayStr, tomorrowStr);
 
   for (const [deptName, config] of Object.entries(DISCORD_WEBHOOKS)) {
+    const deptPast = pastAll.filter((t) => t.departments.includes(deptName));
     const deptToday = todayAll.filter((t) => t.departments.includes(deptName));
     const deptTomorrow = tomorrowAll.filter((t) => t.departments.includes(deptName));
-    // 今日・明日どちらも予定がない場合は送らない
-    if (deptToday.length === 0 && deptTomorrow.length === 0) {
+    // 期限切れ・今日・明日のいずれかがあれば送信
+    if (deptPast.length === 0 && deptToday.length === 0 && deptTomorrow.length === 0) {
       logger.info(`Discord skipped for ${deptName} (no tasks)`);
       continue;
     }
-    const body = buildDepartmentMessage(deptToday, deptTomorrow);
+    const body = buildDepartmentMessage(deptPast, deptToday, deptTomorrow);
     const content = `${config.mention}\n${body}`;
     try {
       await sendToDiscord(config.url, content);

@@ -10,6 +10,8 @@ export type Member = {
   name: string;
   displayName: string;
   email: string;
+  /** 所属部署（複数可、管理者のみ設定可能） */
+  departments: string[];
 };
 
 /** 担当者として表示する名前（登録名 > Google表示名 > メール） */

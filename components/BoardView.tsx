@@ -100,11 +100,18 @@ export function BoardView({ selectedDepartments, currentUserUid }: BoardViewProp
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const list: Member[] = snap.docs.map((d) => {
         const data = d.data();
+        const rawDepts = data.departments ?? data.department;
+        const departments = Array.isArray(rawDepts)
+          ? rawDepts
+          : typeof rawDepts === "string" && rawDepts.trim()
+            ? [rawDepts]
+            : [];
         return {
           uid: d.id,
           name: (data.name as string) ?? "",
           displayName: data.displayName ?? "",
           email: data.email ?? "",
+          departments,
         };
       });
       setMembers(list);
