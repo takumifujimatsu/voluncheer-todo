@@ -27,25 +27,29 @@ const CHART_COLORS = [
 export type DeptAverageData = {
   department: string;
   average: number;
+  averagePrev: number;
   count: number;
 };
 
 export type DashboardChartsProps = {
-  /** 部署別平均スコア（今週） */
-  deptAverages: DeptAverageData[];
+  /** 部署別平均スコア（選択週 + 前週を基準） */
+  deptAveragesWithBaseline: DeptAverageData[];
+  /** 選択中の週キー */
+  selectedWeekKey: string;
   /** 週別スコア推移（部署ごと） */
   weeklyTrend: Record<string, string | number>[];
   selectedDepartment: string | null;
 };
 
 export function DashboardCharts({
-  deptAverages,
+  deptAveragesWithBaseline,
+  selectedWeekKey,
   weeklyTrend,
   selectedDepartment,
 }: DashboardChartsProps) {
   const deptKeys = [
     ...new Set([
-      ...deptAverages.map((d) => d.department),
+      ...deptAveragesWithBaseline.map((d) => d.department),
       ...weeklyTrend.flatMap((r) => Object.keys(r).filter((k) => k !== "weekKey" && typeof r[k] === "number")),
     ]),
   ];
@@ -60,15 +64,18 @@ export function DashboardCharts({
 
   return (
     <div className="space-y-6">
-      {/* 部署別平均スコア（今週） */}
+      {/* 部署別平均スコア（前週基準・週切り替え） */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
         <h3 className="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          今週の部署別平均スコア
+          部署別平均スコア（基準: 前週）
         </h3>
+        <p className="mb-6 text-xs text-slate-500 dark:text-slate-400">
+          表示週: {getWeekLabel(selectedWeekKey)} — 画面上部の週セレクトで切り替え
+        </p>
         <div className="h-48 sm:h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={deptAverages}
+              data={deptAveragesWithBaseline}
               margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-600" />
@@ -88,11 +95,13 @@ export function DashboardCharts({
                   border: "1px solid rgb(226 232 240)",
                   backgroundColor: "white",
                 }}
-                formatter={(value: number | undefined) => [value != null ? `${value.toFixed(1)}点` : "—", "平均"]}
-                labelFormatter={(label) => `${label} (${deptAverages.find((d) => d.department === label)?.count ?? 0}名)`}
+                formatter={(value: number | undefined) => [value != null ? `${value.toFixed(1)}点` : "—", ""]}
+                labelFormatter={(label) => `${label} (${deptAveragesWithBaseline.find((d) => d.department === label)?.count ?? 0}名)`}
               />
-              <Bar dataKey="average" radius={[4, 4, 0, 0]} name="平均点">
-                {deptAverages.map((_, i) => (
+              <Legend />
+              <Bar dataKey="averagePrev" radius={[4, 4, 0, 0]} name="前週（基準）" fill="#94a3b8" fillOpacity={0.6} />
+              <Bar dataKey="average" radius={[4, 4, 0, 0]} name="選択週">
+                {deptAveragesWithBaseline.map((_, i) => (
                   <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                 ))}
               </Bar>

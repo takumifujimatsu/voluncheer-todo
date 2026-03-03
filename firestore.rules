@@ -47,6 +47,16 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update, delete: if false;
     }
+    // メンバーダッシュボード: 非表示メンバー設定（1on1管理者のみ）
+    match /adminSettings/dashboard {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == "fujimatsu.t@voluncheer.or.jp")
+          || request.auth.token.email == "fujimatsu.t@voluncheer.or.jp"
+        );
+    }
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Heart, Pencil, MessageCircle, Plus, Minus, Quote, User } from "lucide-react";
+import { Heart, Pencil, MessageCircle, Plus, Minus, Quote, User, EyeOff } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -8,6 +8,7 @@ import {
   YAxis,
   ResponsiveContainer,
   Tooltip,
+  ReferenceLine,
 } from "recharts";
 import { memberDisplayName, type Member } from "./AddTaskModal";
 import {
@@ -40,6 +41,8 @@ export type MemberDashboardCardProps = {
   onEditOneOnOne: () => void;
   onUpdateCondition: (status: ConditionStatus) => void;
   onSendPeerBonus: () => void;
+  /** ダッシュボードから非表示（1on1管理者のみ） */
+  onHideFromDashboard?: () => void;
 };
 
 export function MemberDashboardCard({
@@ -55,6 +58,7 @@ export function MemberDashboardCard({
   onEditOneOnOne,
   onUpdateCondition,
   onSendPeerBonus,
+  onHideFromDashboard,
 }: MemberDashboardCardProps) {
   const isOwnCard = currentUserUid === member.uid;
   const isHelp = condition === "help";
@@ -96,15 +100,28 @@ export function MemberDashboardCard({
         </div>
         <div className="flex shrink-0 gap-1">
           {isAdmin && (
-            <button
-              type="button"
-              onClick={onEditOneOnOne}
-              className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-              title="1on1フィードバックを編集"
-              aria-label="1on1フィードバックを編集"
-            >
-              <Pencil className="h-4 w-4" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onEditOneOnOne}
+                className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                title="1on1フィードバックを編集"
+                aria-label="1on1フィードバックを編集"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+              {onHideFromDashboard && (
+                <button
+                  type="button"
+                  onClick={onHideFromDashboard}
+                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                  title="ダッシュボードから非表示"
+                  aria-label="ダッシュボードから非表示"
+                >
+                  <EyeOff className="h-4 w-4" />
+                </button>
+              )}
+            </>
           )}
           {!isOwnCard && (
             <button
@@ -194,7 +211,7 @@ export function MemberDashboardCard({
 
       {/* スコア推移ミニグラフ */}
       {chartData.length > 0 && (
-        <div className="mb-4 h-14">
+        <div className="mb-4 h-28 sm:h-32">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <defs>
@@ -205,6 +222,9 @@ export function MemberDashboardCard({
               </defs>
               <XAxis dataKey="label" hide />
               <YAxis domain={[0, 10]} hide />
+              <ReferenceLine y={0} stroke="#94a3b8" strokeOpacity={0.4} strokeDasharray="2 2" />
+              <ReferenceLine y={5} stroke="#94a3b8" strokeOpacity={0.4} strokeDasharray="2 2" />
+              <ReferenceLine y={10} stroke="#94a3b8" strokeOpacity={0.4} strokeDasharray="2 2" />
               <Tooltip
                 contentStyle={{ borderRadius: "0.5rem", fontSize: "0.75rem" }}
                 formatter={(value: number | undefined) => [value != null ? `${value}点` : "—", "スコア"]}

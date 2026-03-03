@@ -13,7 +13,7 @@ import {
   limit,
   type Unsubscribe,
 } from "firebase/firestore";
-import { Heart, Search, BarChart3, Smile, AlertCircle } from "lucide-react";
+import { Heart, Search, BarChart3, Smile, AlertCircle, EyeOff, Eye } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { type Member, memberDisplayName } from "./AddTaskModal";
 import { MemberDashboardCard } from "./MemberDashboardCard";
@@ -27,7 +27,7 @@ import {
   type PeerBonus,
 } from "@/types/dashboard";
 import { DEPARTMENTS } from "@/types/task";
-import { getWeekKey, getWeekLabel, getRecentWeekKeys } from "@/lib/weekUtils";
+import { getWeekKey, getWeekLabel, getRecentWeekKeys, getPrevWeekKey } from "@/lib/weekUtils";
 
 const PEER_BONUS_DISPLAY_LIMIT = 3;
 const HISTORY_WEEKS = 12;
@@ -55,8 +55,21 @@ export function DashboardView({
   const [selectedWeekKey, setSelectedWeekKey] = useState(getWeekKey(new Date()));
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [hiddenMemberUids, setHiddenMemberUids] = useState<Set<string>>(new Set());
 
   const weekOptions = getRecentWeekKeys(HISTORY_WEEKS);
+
+  // 非表示メンバー設定（1on1管理者のみ編集可）
+  useEffect(() => {
+    const db = getDb();
+    const ref = doc(db, "adminSettings", "dashboard");
+    const unsub = onSnapshot(ref, (snap) => {
+      const data = snap.data();
+      const uids = (data?.hiddenMemberUids as string[] | undefined) ?? [];
+      setHiddenMemberUids(new Set(uids));
+    });
+    return () => unsub();
+  }, []);
   const isAdmin = currentUserEmail === ADMIN_EMAIL_ONEONONE;
 
   // 週次履歴購読
@@ -176,6 +189,32 @@ export function DashboardView({
     return null;
   };
 
+  /** その人の最新の1on1フィードバック（updatedAt が最も新しいもの）。Current Score 表示用 */
+  const getLatestFeedbackForMember = (memberUid: string): OneOnOneFeedback | null => {
+    const candidates: OneOnOneFeedback[] = [];
+    for (const key of Object.keys(historyMap)) {
+      if (key.startsWith(`${memberUid}_`)) {
+        candidates.push(historyMap[key]);
+      }
+    }
+    const legacy = legacyMap[memberUid];
+    if (legacy) candidates.push(legacy);
+    if (candidates.length === 0) return null;
+    const getTime = (c: OneOnOneFeedback): number => {
+      const u = c.updatedAt;
+      if (u && typeof u === "object" && "toMillis" in u && typeof (u as { toMillis: () => number }).toMillis === "function") {
+        return (u as { toMillis: () => number }).toMillis();
+      }
+      if (u instanceof Date) return u.getTime();
+      return 0;
+    };
+    const withTime = candidates.map((c) => ({ feedback: c, time: getTime(c) }));
+    const hasTime = withTime.filter((x) => x.time > 0);
+    if (hasTime.length === 0) return candidates[0] ?? null;
+    hasTime.sort((a, b) => b.time - a.time);
+    return hasTime[0]!.feedback;
+  };
+
   const getFeedbackByWeekForMember = (memberUid: string): Record<string, { score: number; plusText: string; minusText: string }> => {
     const result: Record<string, { score: number; plusText: string; minusText: string }> = {};
     const currentWeek = getWeekKey(new Date());
@@ -207,13 +246,18 @@ export function DashboardView({
       .reverse();
   };
 
+  const visibleMembers = useMemo(
+    () => members.filter((m) => !hiddenMemberUids.has(m.uid)),
+    [members, hiddenMemberUids]
+  );
+
   const groupedByDepartment = useMemo(() => {
     const map = new Map<string, Member[]>();
     for (const d of DEPARTMENTS as readonly string[]) {
       map.set(d, []);
     }
     map.set("未設定", []);
-    for (const m of members) {
+    for (const m of visibleMembers) {
       const depts = m.departments?.filter((d) => d?.trim()) ?? [];
       if (depts.length === 0) {
         map.get("未設定")!.push(m);
@@ -231,7 +275,7 @@ export function DashboardView({
     const unset = map.get("未設定")!;
     if (unset.length > 0) result.push({ department: "未設定", members: unset });
     return result;
-  }, [members]);
+  }, [visibleMembers]);
 
   const filteredGroups = useMemo(() => {
     let groups = groupedByDepartment;
@@ -271,21 +315,39 @@ export function DashboardView({
     };
   }, [filteredGroups, historyMap, legacyMap, selectedWeekKey, conditionMap]);
 
-  const deptAverages = useMemo(() => {
+  const getScoresForWeek = useMemo(() => {
+    const currentWeek = getWeekKey(new Date());
+    return (memberUid: string, weekKey: string) => {
+      const key = `${memberUid}_${weekKey}`;
+      const fromHistory = historyMap[key];
+      if (fromHistory) return fromHistory.score;
+      if (weekKey === currentWeek && legacyMap[memberUid]) return legacyMap[memberUid].score;
+      return null;
+    };
+  }, [historyMap, legacyMap]);
+
+  const deptAveragesWithBaseline = useMemo(() => {
+    const prevWeekKey = getPrevWeekKey(selectedWeekKey);
     return groupedByDepartment
       .filter((g) => g.department !== "全体" && g.department !== "未設定")
       .map(({ department, members: deptMembers }) => {
-        const scores = deptMembers
-          .map((m) => {
-            const f = getFeedbackForMember(m.uid);
-            return f?.score;
-          })
+        const scoresSelected = deptMembers
+          .map((m) => getScoresForWeek(m.uid, selectedWeekKey))
           .filter((s): s is number => s != null && s > 0);
-        const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-        return { department, average: Math.round(avg * 10) / 10, count: scores.length };
+        const scoresPrev = deptMembers
+          .map((m) => getScoresForWeek(m.uid, prevWeekKey))
+          .filter((s): s is number => s != null && s > 0);
+        const avgSelected = scoresSelected.length > 0 ? scoresSelected.reduce((a, b) => a + b, 0) / scoresSelected.length : 0;
+        const avgPrev = scoresPrev.length > 0 ? scoresPrev.reduce((a, b) => a + b, 0) / scoresPrev.length : 0;
+        return {
+          department,
+          average: Math.round(avgSelected * 10) / 10,
+          averagePrev: Math.round(avgPrev * 10) / 10,
+          count: scoresSelected.length,
+        };
       })
-      .filter((d) => d.count > 0);
-  }, [groupedByDepartment, historyMap, legacyMap, selectedWeekKey]);
+      .filter((d) => d.count > 0 || d.averagePrev > 0);
+  }, [groupedByDepartment, getScoresForWeek, selectedWeekKey]);
 
   const weeklyTrend = useMemo(() => {
     const depts = groupedByDepartment
@@ -369,6 +431,35 @@ export function DashboardView({
     setPeerBonusDefaultToUid(toUid);
     setPeerBonusModalOpen(true);
   };
+
+  const handleHideMember = async (memberUid: string) => {
+    if (!isAdmin) return;
+    const db = getDb();
+    const next = new Set(hiddenMemberUids);
+    next.add(memberUid);
+    await setDoc(
+      doc(db, "adminSettings", "dashboard"),
+      { hiddenMemberUids: [...next] },
+      { merge: true }
+    );
+  };
+
+  const handleUnhideMember = async (memberUid: string) => {
+    if (!isAdmin) return;
+    const db = getDb();
+    const next = new Set(hiddenMemberUids);
+    next.delete(memberUid);
+    await setDoc(
+      doc(db, "adminSettings", "dashboard"),
+      { hiddenMemberUids: [...next] },
+      { merge: true }
+    );
+  };
+
+  const hiddenMembers = useMemo(
+    () => members.filter((m) => hiddenMemberUids.has(m.uid)),
+    [members, hiddenMemberUids]
+  );
 
   const departmentTabs = useMemo(() => {
     const base = [{ key: null, label: "全部署" }];
@@ -475,9 +566,38 @@ export function DashboardView({
         </div>
       </div>
 
+      {/* 非表示メンバー管理（管理者のみ・非表示がいる場合） */}
+      {isAdmin && hiddenMembers.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+          <p className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-200">
+            非表示中のメンバー（{hiddenMembers.length}人）
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {hiddenMembers.map((m) => (
+              <span
+                key={m.uid}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm bg-white border border-amber-200 dark:bg-slate-800 dark:border-amber-700"
+              >
+                {memberDisplayName(m)}
+                <button
+                  type="button"
+                  onClick={() => handleUnhideMember(m.uid)}
+                  className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                  aria-label={`${memberDisplayName(m)}を表示に戻す`}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  表示に戻す
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* グラフ */}
       <DashboardCharts
-        deptAverages={deptAverages}
+        deptAveragesWithBaseline={deptAveragesWithBaseline}
+        selectedWeekKey={selectedWeekKey}
         weeklyTrend={weeklyTrend}
         selectedDepartment={selectedDepartment}
       />
@@ -499,7 +619,7 @@ export function DashboardView({
               <MemberDashboardCard
                 key={member.uid}
                 member={member}
-                oneOnOne={getFeedbackForMember(member.uid)}
+                oneOnOne={getLatestFeedbackForMember(member.uid)}
                 condition={conditionMap[member.uid]?.status ?? null}
                 conditionUpdatedAt={conditionMap[member.uid]?.updatedAt}
                 recentBonuses={getRecentBonusesForMember(member.uid)}
@@ -510,6 +630,7 @@ export function DashboardView({
                 onEditOneOnOne={() => setOneOnOneModalMember(member)}
                 onUpdateCondition={(status) => handleUpdateCondition(member.uid, status)}
                 onSendPeerBonus={() => openPeerBonusFor(member.uid)}
+                onHideFromDashboard={isAdmin ? () => handleHideMember(member.uid) : undefined}
               />
             ))}
           </div>
