@@ -1,6 +1,11 @@
 "use client";
 
-import type { CompletedFilter, TaskSort } from "@/lib/taskFilters";
+import type {
+  CompletedFilter,
+  TaskSort,
+  DoneLimit,
+} from "@/lib/taskFilters";
+import { DONE_LIMIT_OPTIONS } from "@/lib/taskFilters";
 
 export type FilterSortBarProps = {
   completedFilter: CompletedFilter;
@@ -9,6 +14,8 @@ export type FilterSortBarProps = {
   onSortChange: (value: TaskSort) => void;
   myTasksOnly: boolean;
   onMyTasksOnlyChange: (value: boolean) => void;
+  doneLimit?: DoneLimit;
+  onDoneLimitChange?: (value: DoneLimit) => void;
   currentUserUid?: string | null;
 };
 
@@ -19,6 +26,8 @@ export function FilterSortBar({
   onSortChange,
   myTasksOnly,
   onMyTasksOnlyChange,
+  doneLimit = "all",
+  onDoneLimitChange,
   currentUserUid,
 }: FilterSortBarProps) {
   const displayOptions = [
@@ -74,6 +83,34 @@ export function FilterSortBar({
             />
             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">自分のタスクのみ</span>
           </label>
+        </>
+      )}
+
+      {/* DONE の表示件数（すべて or 直近N件） */}
+      {onDoneLimitChange && (
+        <>
+          <div className="hidden shrink-0 border-l border-slate-200 sm:block sm:self-stretch dark:border-slate-600" aria-hidden />
+          <section className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-600 dark:bg-slate-700/80 sm:flex-row sm:items-center sm:gap-3 sm:rounded-lg sm:border sm:border-slate-200 sm:bg-slate-50/80 sm:p-0.5 dark:sm:border-slate-600 dark:sm:bg-slate-700/80">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 sm:text-sm sm:normal-case sm:tracking-normal sm:text-slate-600 dark:sm:text-slate-400">
+              Done
+            </p>
+            <div className="flex flex-wrap gap-1.5 sm:flex-nowrap">
+              {DONE_LIMIT_OPTIONS.map(({ value, label }) => (
+                <button
+                  key={String(value)}
+                  type="button"
+                  onClick={() => onDoneLimitChange(value)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                    doneLimit === value
+                      ? "bg-white text-slate-800 shadow-sm dark:bg-slate-600 dark:text-slate-100"
+                      : "text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </section>
         </>
       )}
 

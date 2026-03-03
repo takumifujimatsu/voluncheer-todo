@@ -7,16 +7,13 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  onSnapshot,
-  query,
-  orderBy,
   serverTimestamp,
   Timestamp,
-  type Unsubscribe,
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
+import { useTasks } from "@/contexts/TasksContext";
 import { applyTaskFiltersAndSort, getDueTime } from "@/lib/taskFilters";
-import type { CompletedFilter, TaskSort } from "@/lib/taskFilters";
+import type { CompletedFilter, TaskSort, DoneLimit } from "@/lib/taskFilters";
 import type { Task, TaskStatus } from "@/types/task";
 import { DEPARTMENTS, ASSIGNEE_EVERYONE_UID } from "@/types/task";
 import {
@@ -71,6 +68,8 @@ function formatDueDateRelative(due: unknown): string | null {
 
 export type TaskBoardProps = {
   selectedDepartments: string[];
+  /** メンバー一覧（親から渡す。重複購読を避けるため） */
+  members: Member[];
   /** ログイン中のユーザー uid。担当タスクを目立たせるために使用 */
   currentUserUid?: string | null;
   /** 表示（すべて/未完了/完了）。URL と同期する場合は親から渡す */
@@ -80,10 +79,14 @@ export type TaskBoardProps = {
   onSortChange?: (v: TaskSort) => void;
   myTasksOnly?: boolean;
   onMyTasksOnlyChange?: (v: boolean) => void;
+  /** DONE の表示件数制限（クエリ時に適用） */
+  doneLimit?: DoneLimit;
+  onDoneLimitChange?: (v: DoneLimit) => void;
 };
 
 export function TaskBoard({
   selectedDepartments,
+  members,
   currentUserUid,
   completedFilter: completedFilterProp,
   onCompletedFilterChange,
@@ -91,9 +94,10 @@ export function TaskBoard({
   onSortChange,
   myTasksOnly: myTasksOnlyProp,
   onMyTasksOnlyChange,
+  doneLimit: doneLimitProp,
+  onDoneLimitChange,
 }: TaskBoardProps) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
+  const { tasks } = useTasks();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalStatus, setModalStatus] = useState<TaskStatus>("todo");
   const [editModalTask, setEditModalTask] = useState<Task | null>(null);
@@ -126,60 +130,8 @@ export function TaskBoard({
   const setSort = onSortChange ?? (() => {});
   const myTasksOnly = myTasksOnlyProp ?? false;
   const setMyTasksOnly = onMyTasksOnlyChange ?? (() => {});
-
-  useEffect(() => {
-    const db = getDb();
-    const q = query(collection(db, "tasks"), orderBy("createdAt", "desc"));
-    const unsub: Unsubscribe = onSnapshot(q, (snap) => {
-      const list: Task[] = snap.docs.map((d) => {
-        const data = d.data();
-        const rawDepts = data.departments ?? data.department;
-        const departments = Array.isArray(rawDepts)
-          ? rawDepts
-          : rawDepts
-            ? [rawDepts as string]
-            : [];
-        return {
-          id: d.id,
-          title: data.title ?? "",
-          departments,
-          status: (data.status as TaskStatus) ?? "todo",
-          createdAt: data.createdAt,
-          assigneeUid: data.assigneeUid ?? null,
-          assigneeName: data.assigneeName ?? null,
-          dueDate: data.dueDate ?? null,
-          memo: data.memo ?? null,
-          nextTaskId: data.nextTaskId ?? null,
-        };
-      });
-      setTasks(list);
-    });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const db = getDb();
-    const unsub = onSnapshot(collection(db, "users"), (snap) => {
-      const list: Member[] = snap.docs.map((d) => {
-        const data = d.data();
-        const rawDepts = data.departments ?? data.department;
-        const departments = Array.isArray(rawDepts)
-          ? rawDepts
-          : typeof rawDepts === "string" && rawDepts.trim()
-            ? [rawDepts]
-            : [];
-        return {
-          uid: d.id,
-          name: (data.name as string) ?? "",
-          displayName: data.displayName ?? "",
-          email: data.email ?? "",
-          departments,
-        };
-      });
-      setMembers(list);
-    });
-    return () => unsub();
-  }, []);
+  const doneLimit = doneLimitProp ?? "all";
+  const setDoneLimit = onDoneLimitChange ?? (() => {});
 
   const byDepartment =
     selectedDepartments.length === 0
@@ -509,6 +461,8 @@ export function TaskBoard({
           onSortChange={setSort}
           myTasksOnly={myTasksOnly}
           onMyTasksOnlyChange={setMyTasksOnly}
+          doneLimit={doneLimit}
+          onDoneLimitChange={setDoneLimit}
           currentUserUid={currentUserUid}
         />
       </div>

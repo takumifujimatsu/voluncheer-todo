@@ -10,6 +10,17 @@ export type TaskSort = "created" | "dueAsc" | "dueDesc" | "myTasksFirst";
 
 export const MY_TASKS_ONLY_STORAGE_KEY = "voluncheer-my-tasks-only";
 
+/** DONE タスクの表示件数制限（localStorage で永続）。null = すべて表示 */
+export const DONE_LIMIT_STORAGE_KEY = "voluncheer-done-limit";
+export type DoneLimit = "all" | 10 | 30 | 50 | 100;
+export const DONE_LIMIT_OPTIONS: { value: DoneLimit; label: string }[] = [
+  { value: "all", label: "すべて" },
+  { value: 10, label: "直近10件" },
+  { value: 30, label: "直近30件" },
+  { value: 50, label: "直近50件" },
+  { value: 100, label: "直近100件" },
+];
+
 export function getDueTime(due: unknown): number {
   if (due == null) return 0;
   if (due instanceof Timestamp) return due.toDate().getTime();

@@ -16,7 +16,9 @@ import { deleteUser } from "firebase/auth";
 import { getDb } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { TasksProvider } from "@/contexts/TasksContext";
 import { useAppUrlState } from "@/hooks/useAppUrlState";
+import { useDoneLimit } from "@/hooks/useDoneLimit";
 import { DepartmentSelector } from "@/components/DepartmentSelector";
 import { AddTaskModal, type Member } from "@/components/AddTaskModal";
 import { ProfileModal } from "@/components/ProfileModal";
@@ -77,6 +79,7 @@ function HomeContent() {
     myTasksOnly,
     setMyTasksOnly,
   } = useAppUrlState();
+  const { doneLimit, setDoneLimit } = useDoneLimit();
   const [headerAddModalOpen, setHeaderAddModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
@@ -88,18 +91,14 @@ function HomeContent() {
   const [nameInput, setNameInput] = useState("");
   const [nameSubmitting, setNameSubmitting] = useState(false);
   /** メンバー用ゲート: 正しいパスワードを入力したら true（sessionStorage で永続） */
-  const [memberGatePassed, setMemberGatePassed] = useState(false);
+  const [memberGatePassed, setMemberGatePassed] = useState(() =>
+    typeof window !== "undefined" && sessionStorage.getItem("voluncheer-member-gate") === "1"
+  );
   const [gatePasswordInput, setGatePasswordInput] = useState("");
   const [gatePasswordError, setGatePasswordError] = useState<string | null>(null);
   const [gatePasswordVisible, setGatePasswordVisible] = useState(false);
   /** リストビュー内のサブ表示: ボード（To Do/Done） or 完了（部署別） */
   const [listSubView, setListSubView] = useState<"board" | "doneByDept">("board");
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && sessionStorage.getItem("voluncheer-member-gate") === "1") {
-      setMemberGatePassed(true);
-    }
-  }, []);
 
   useEffect(() => {
     if (sidebarOpen) {
@@ -179,14 +178,6 @@ function HomeContent() {
     setHeaderAddModalOpen(false);
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2EABE3]" aria-hidden />
-      </div>
-    );
-  }
-
   const handleSignIn = async () => {
     setAuthError(null);
     try {
@@ -224,7 +215,20 @@ function HomeContent() {
     }
   };
 
-  if (needsNameRegistration) {
+  if (loading && user) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 dark:bg-slate-900">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-[#2EABE3]" aria-hidden />
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            読み込み中…
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loading && needsNameRegistration) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 dark:bg-slate-900">
         <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-600 dark:bg-slate-800">
@@ -291,6 +295,11 @@ function HomeContent() {
             <p className="mb-6 text-center text-sm text-slate-500 dark:text-slate-400">
               メンバー用のシークレットパスワードを入力してください
             </p>
+            {loading && (
+              <p className="mb-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                認証を確認しています…
+              </p>
+            )}
             {gatePasswordError && (
               <p
                 className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
@@ -353,11 +362,20 @@ function HomeContent() {
               {authError}
             </p>
           )}
+          {loading && (
+            <p className="mb-4 text-center text-sm text-slate-500 dark:text-slate-400">
+              認証を確認しています…
+            </p>
+          )}
           <button
             type="button"
             onClick={handleSignIn}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
           >
+            {loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#2EABE3]" aria-hidden />
+            ) : (
             <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
               <path
                 fill="#4285F4"
@@ -376,7 +394,8 @@ function HomeContent() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            Google でログイン
+            )}
+            {loading ? "読み込み中…" : "Google でログイン"}
           </button>
         </div>
       </div>
@@ -384,8 +403,9 @@ function HomeContent() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900">
-      <AddTaskModal
+    <TasksProvider doneLimit={doneLimit}>
+      <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900">
+        <AddTaskModal
         isOpen={headerAddModalOpen}
         onClose={() => setHeaderAddModalOpen(false)}
         defaultStatus="todo"
@@ -661,6 +681,7 @@ function HomeContent() {
               {listSubView === "board" ? (
                 <TaskBoard
                   selectedDepartments={selectedDepartments}
+                  members={members}
                   currentUserUid={user?.uid}
                   completedFilter={completedFilter}
                   onCompletedFilterChange={setCompletedFilter}
@@ -668,10 +689,13 @@ function HomeContent() {
                   onSortChange={setSort}
                   myTasksOnly={myTasksOnly}
                   onMyTasksOnlyChange={setMyTasksOnly}
+                  doneLimit={doneLimit}
+                  onDoneLimitChange={setDoneLimit}
                 />
               ) : (
                 <DoneByDepartmentView
                   selectedDepartments={selectedDepartments}
+                  members={members}
                   currentUserUid={user?.uid}
                 />
               )}
@@ -680,18 +704,21 @@ function HomeContent() {
           {viewMode === "calendar" && (
             <CalendarView
               selectedDepartments={selectedDepartments}
+              members={members}
               currentUserUid={user?.uid}
             />
           )}
           {viewMode === "board" && (
             <BoardView
               selectedDepartments={selectedDepartments}
+              members={members}
               currentUserUid={user?.uid}
             />
           )}
           {viewMode === "timeline" && (
             <TimelineView
               selectedDepartments={selectedDepartments}
+              members={members}
               currentUserUid={user?.uid}
             />
           )}
@@ -722,6 +749,7 @@ function HomeContent() {
         </button>
       </div>
     </div>
+    </TasksProvider>
   );
 }
 

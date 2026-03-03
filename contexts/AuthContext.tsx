@@ -44,18 +44,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u);
       if (u) {
         try {
-          await setDoc(
-            doc(db, "users", u.uid),
+          const userRef = doc(db, "users", u.uid);
+          const snap = await getDoc(userRef);
+          const data = snap.data();
+          const name = (data?.name as string)?.trim() ?? "";
+          setUserProfile(name ? { name } : null);
+          setDoc(
+            userRef,
             {
               displayName: u.displayName ?? "",
               email: u.email ?? "",
             },
             { merge: true }
-          );
-          const snap = await getDoc(doc(db, "users", u.uid));
-          const data = snap.data();
-          const name = (data?.name as string)?.trim() ?? "";
-          setUserProfile(name ? { name } : null);
+          ).catch(() => {});
         } catch {
           setUserProfile(null);
         }

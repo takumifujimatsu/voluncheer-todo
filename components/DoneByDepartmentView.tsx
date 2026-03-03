@@ -1,18 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  collection,
-  doc,
-  deleteDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  updateDoc,
-  type Unsubscribe,
-} from "firebase/firestore";
+import { doc, deleteDoc, updateDoc } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
+import { useTasks } from "@/contexts/TasksContext";
 import { getDueTime } from "@/lib/taskFilters";
 import type { Task, TaskStatus } from "@/types/task";
 import { DEPARTMENTS, ASSIGNEE_EVERYONE_UID } from "@/types/task";
@@ -22,6 +14,8 @@ import { TaskDetailModal } from "./TaskDetailModal";
 
 export type DoneByDepartmentViewProps = {
   selectedDepartments: string[];
+  /** メンバー一覧（親から渡す。重複購読を避けるため） */
+  members: Member[];
   currentUserUid?: string | null;
 };
 
@@ -36,10 +30,10 @@ function formatDueDateOnly(due: unknown): string {
 
 export function DoneByDepartmentView({
   selectedDepartments,
+  members,
   currentUserUid,
 }: DoneByDepartmentViewProps) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
+  const { tasks } = useTasks();
   const [editModalTask, setEditModalTask] = useState<Task | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     task: Task;
@@ -54,63 +48,6 @@ export function DoneByDepartmentView({
     new Set(),
   );
   const DELETE_CONFIRM_DURATION_MS = 200;
-
-  useEffect(() => {
-    const db = getDb();
-    const q = query(
-      collection(db, "tasks"),
-      orderBy("createdAt", "desc"),
-    );
-    const unsub: Unsubscribe = onSnapshot(q, (snap) => {
-      const list: Task[] = snap.docs.map((d) => {
-        const data = d.data();
-        const rawDepts = data.departments ?? data.department;
-        const departments = Array.isArray(rawDepts)
-          ? rawDepts
-          : rawDepts
-            ? [rawDepts as string]
-            : [];
-        return {
-          id: d.id,
-          title: data.title ?? "",
-          departments,
-          status: (data.status as TaskStatus) ?? "todo",
-          createdAt: data.createdAt,
-          assigneeUid: data.assigneeUid ?? null,
-          assigneeName: data.assigneeName ?? null,
-          dueDate: data.dueDate ?? null,
-          memo: data.memo ?? null,
-          nextTaskId: data.nextTaskId ?? null,
-        };
-      });
-      setTasks(list);
-    });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const db = getDb();
-    const unsub = onSnapshot(collection(db, "users"), (snap) => {
-      const list: Member[] = snap.docs.map((d) => {
-        const data = d.data();
-        const rawDepts = data.departments ?? data.department;
-        const departments = Array.isArray(rawDepts)
-          ? rawDepts
-          : typeof rawDepts === "string" && rawDepts.trim()
-            ? [rawDepts]
-            : [];
-        return {
-          uid: d.id,
-          name: (data.name as string) ?? "",
-          displayName: data.displayName ?? "",
-          email: data.email ?? "",
-          departments,
-        };
-      });
-      setMembers(list);
-    });
-    return () => unsub();
-  }, []);
 
   const byDepartment =
     selectedDepartments.length === 0
