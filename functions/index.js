@@ -3,16 +3,21 @@
  * - 毎日 7:00 JST に期限切れ・今日・明日の To Do を部署別に送信
  * - タスク追加時に担当部署の Discord へ通知
  * - 資料室に資料が追加されたときにその部署の Discord へ通知
+ * - 外部システム向け: 資料室へ資料を追加する HTTP API（apiResourceImport）
  *
  * 本番では Webhook URL 等は環境変数または Secret Manager に移すことを推奨します。
  */
 
 const {initializeApp} = require("firebase-admin/app");
-const {getFirestore, Timestamp} = require("firebase-admin/firestore");
+const {getFirestore, Timestamp, FieldValue} = require("firebase-admin/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {onRequest} = require("firebase-functions/v2/https");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
+
+/** 議事録サイト等から資料室へ POST する API 用（Secret Manager に登録） */
+const resourceImportApiKey = defineSecret("RESOURCE_IMPORT_API_KEY");
 
 initializeApp();
 
@@ -360,6 +365,175 @@ exports.discordDailyTodoNotifyManual = onRequest(
     } catch (e) {
       logger.error("discordDailyTodoNotifyManual", e);
       res.status(500).send(String(e.message));
+    }
+  }
+);
+
+/** 資料室と同じ部署一覧（types/task.ts の DEPARTMENTS と一致させること） */
+const IMPORT_DEPARTMENTS = [
+  "全体",
+  "執行役員",
+  "営業部",
+  "広報部",
+  "デザイン部",
+  "オペレーション部",
+  "企画部",
+  "総務部",
+  "開発部",
+  "経理部",
+];
+const IMPORT_DEPARTMENT_SET = new Set(IMPORT_DEPARTMENTS);
+
+const IMPORT_RESOURCE_TYPES = new Set([
+  "canva",
+  "document",
+  "spreadsheet",
+  "form",
+  "drive",
+  "pdf",
+  "other",
+]);
+
+const IMPORT_INTERNAL_ACCESS = new Set(["none", "view", "edit"]);
+const IMPORT_EXTERNAL_ACCESS = new Set(["none", "view", "edit"]);
+
+/**
+ * @param {import("firebase-functions/v2/https").Request} req
+ * @returns {string}
+ */
+function extractResourceImportApiKey(req) {
+  const auth = req.get("Authorization");
+  if (auth && auth.startsWith("Bearer ")) {
+    return auth.slice(7).trim();
+  }
+  const x = req.get("X-API-Key");
+  return x ? String(x).trim() : "";
+}
+
+/**
+ * 外部サーバー（議事録サイト等）から資料室 `resources` に 1 件追加する。
+ * 認証: Secret `RESOURCE_IMPORT_API_KEY` と一致する
+ * `Authorization: Bearer <key>` または `X-API-Key: <key>`
+ */
+exports.apiResourceImport = onRequest(
+  {
+    secrets: [resourceImportApiKey],
+    cors: false,
+    invoker: "public",
+  },
+  async (req, res) => {
+    res.set("Content-Type", "application/json; charset=utf-8");
+
+    if (req.method !== "POST") {
+      res.status(405).json({error: "Method not allowed", allowed: ["POST"]});
+      return;
+    }
+
+    const expectedKey = resourceImportApiKey.value();
+    if (!expectedKey) {
+      logger.error("apiResourceImport: RESOURCE_IMPORT_API_KEY is empty");
+      res.status(503).json({error: "Server misconfiguration"});
+      return;
+    }
+
+    const provided = extractResourceImportApiKey(req);
+    if (!provided || provided !== expectedKey) {
+      res.status(401).json({error: "Unauthorized"});
+      return;
+    }
+
+    let body = req.body;
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        res.status(400).json({error: "Invalid JSON"});
+        return;
+      }
+    }
+    if (body == null || typeof body !== "object" || Array.isArray(body)) {
+      res.status(400).json({error: "Expected JSON object body"});
+      return;
+    }
+
+    const title =
+      typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) {
+      res.status(400).json({error: "title is required (non-empty string)"});
+      return;
+    }
+
+    const department =
+      typeof body.department === "string" ? body.department.trim() : "";
+    if (!department || !IMPORT_DEPARTMENT_SET.has(department)) {
+      res.status(400).json({
+        error: "department must be one of the app departments",
+        allowed: [...IMPORT_DEPARTMENTS],
+      });
+      return;
+    }
+
+    const typeRaw = typeof body.type === "string" ? body.type : "document";
+    if (!IMPORT_RESOURCE_TYPES.has(typeRaw)) {
+      res.status(400).json({
+        error: "Invalid type",
+        allowed: [...IMPORT_RESOURCE_TYPES],
+      });
+      return;
+    }
+
+    const description =
+      typeof body.description === "string" ? body.description : "";
+
+    const internalAccess =
+      typeof body.internalAccess === "string" ? body.internalAccess : "view";
+    if (!IMPORT_INTERNAL_ACCESS.has(internalAccess)) {
+      res.status(400).json({
+        error: "Invalid internalAccess",
+        allowed: [...IMPORT_INTERNAL_ACCESS],
+      });
+      return;
+    }
+
+    const externalAccess =
+      typeof body.externalAccess === "string" ? body.externalAccess : "none";
+    if (!IMPORT_EXTERNAL_ACCESS.has(externalAccess)) {
+      res.status(400).json({
+        error: "Invalid externalAccess",
+        allowed: [...IMPORT_EXTERNAL_ACCESS],
+      });
+      return;
+    }
+
+    let url = typeof body.url === "string" ? body.url.trim() : "";
+    if (!url) {
+      url = "#";
+    }
+
+    let folderId = body.folderId;
+    if (folderId === undefined || folderId === null || folderId === "") {
+      folderId = null;
+    } else {
+      folderId = String(folderId);
+    }
+
+    try {
+      const db = getFirestore();
+      const docRef = await db.collection("resources").add({
+        title,
+        type: typeRaw,
+        description,
+        department,
+        internalAccess,
+        externalAccess,
+        url,
+        folderId,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      res.status(201).json({ok: true, id: docRef.id});
+    } catch (e) {
+      logger.error("apiResourceImport: Firestore add failed", e);
+      res.status(500).json({error: "Failed to create resource"});
     }
   }
 );
